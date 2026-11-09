@@ -296,4 +296,28 @@ async function initializeTables(dbHandle: DbHandle) {
     );
   `
   await dbHandle.execRaw(ddl)
+
+  // Forward-compatible migration for databases created by earlier MediSense builds.
+  // CREATE TABLE IF NOT EXISTS does not add columns to an existing table; the auth
+  // routes select the complete users row, so missing legacy columns break login.
+  await dbHandle.execRaw(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT NOT NULL DEFAULT '';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'patient';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT NOT NULL DEFAULT '';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_code TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_expires_at TIMESTAMP;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+  `)
+
+  // Ensure email lookups remain indexed/unique where possible without deleting or
+  // rewriting existing user records. Existing duplicates are preserved; in that
+  // case the index is skipped and login can still query by email.
+  try {
+    await dbHandle.execRaw(`CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique_idx ON users (email) WHERE email IS NOT NULL`)
+  } catch (error) {
+    console.warn('Could not create users email unique index (existing duplicates may be present):', (error as Error).message)
+  }
 }

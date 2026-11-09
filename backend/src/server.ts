@@ -69,10 +69,14 @@ app.onError((err, c) => {
 
 const PORT = parseInt(process.env.PORT || '4000', 10)
 
-// Auto-seed database on bootstrap
-seed().catch((err) => {
-  console.error('Failed to run initial seed:', err)
-})
+// Initialize schema and seed demo data before accepting requests. Previously this
+// ran in the background, allowing the first login request to race database setup.
+try {
+  await seed()
+} catch (err) {
+  console.error('Database initialization/seed failed:', err)
+  throw err
+}
 
 console.log(`🏥 Medisense AI Backend starting on http://localhost:${PORT}`)
 
